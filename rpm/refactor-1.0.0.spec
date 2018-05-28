@@ -1,6 +1,3 @@
-#%define         gist_patch gist43c6d9f38795cca81c54-37a4546d20f6ba8ea07c7191abf903b7623efa13
-#%define         scala_version 2.8.0
-
 Name:          	refactor
 Version:       	1.0.0
 Release:        1%{?dist}
