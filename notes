@@ -1,0 +1,7 @@
+# Tool used to create RPMS
+$ yum install rpm-build
+
+# Tool used to sign RPMS
+$ yum install rpm-sign
+$ Requires rpm-build directory to be made in home directory
+
