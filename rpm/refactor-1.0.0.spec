@@ -11,7 +11,7 @@ BuildRoot: %{_tmppath}/refactor.tar.gz
 %description
 
 %prep
-%setup -n %{name}
+%setup -n ./bin
 
 %build
 # None required
