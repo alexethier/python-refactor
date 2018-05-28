@@ -1,4 +1,6 @@
 #!/bin/python
+# Alex Ethier 2018 https://github.com/alexethier/refactor
+
 import argparse
 import sys
 import pprint
@@ -11,30 +13,33 @@ class Refactor:
   def __init__(self):
     pass;
 
-  def combine(self, all_find_options):
+  # From the input lists of lists generate a new list containing the cross product between all input elements.
+  def combine(self, token_options):
 
-    # If there are more than two token lists, use recursion to combine all the lists together except the first one.
-    if(len(all_find_options) > 2):
-      current_options = all_find_options[1:]
+    # If there are more than two token lists the input, use recursion to combine all the lists together except the first one.
+    if(len(token_options) > 2):
+      current_options = token_options[1:]
       combinations = self.combine(current_options)
-      new_all_find_options = []
-      new_all_find_options.append(all_find_options[0])
-      new_all_find_options.append(combinations)
+      new_token_options = []
+      new_token_options.append(token_options[0])
+      new_token_options.append(combinations)
 
-      return self.combine(new_all_find_options)
+      return self.combine(new_token_options)
 
-    # If there are exactly two token lists combine them in all standard ways
-    elif(len(all_find_options) > 1):
+    # If there are exactly two token lists combine them in all the standard ways.
+    elif(len(token_options) == 2):
       combinations = []
-      for first_token in all_find_options[0]:
-        for second_token in all_find_options[1]:
+      for first_token in token_options[0]:
+        for second_token in token_options[1]:
           combinations.append(first_token + second_token)
           if second_token != "":
             combinations.append(first_token + " " + second_token)
             combinations.append(first_token + "_" + second_token)
             combinations.append(first_token + "-" + second_token)
+            # Add other common token separators here.
           else:
             # If dummy variables are used then combining the tokens should not include a separator.
+            # In order to keep the indexes in sync we need to add one dummy combination for each real combination.
             combinations.append(first_token + second_token)
             combinations.append(first_token + second_token)
             combinations.append(first_token + second_token)
@@ -43,8 +48,9 @@ class Refactor:
 
     else:
       # If there is one token list there is nothing to do but return it.
-      return all_find_options[0]
+      return token_options[0]
 
+  # Obtain a list of different token patterns and return all possible combinations
   def computeCombinations(self, token_list):
     all_combinations = []
     for token in token_list:
@@ -52,6 +58,7 @@ class Refactor:
       combination_options.append(token.lower())
       combination_options.append(token.upper())
       combination_options.append(token.title())
+      # Other casing options can be added here
 
       all_combinations.append(combination_options)
 
@@ -63,7 +70,8 @@ class Refactor:
       length = length - 1
     return token_list
 
-  # Pads the two lists so they are the same length
+  # Pads the two lists so they are the same length, the shorter list will get dummy tokens.
+  # This is necessary to keep the indexes between find and replace tokens synchronized.
   def get_tokens(self, find_tokens, replace_tokens):
 
     token_object = {}
@@ -123,7 +131,7 @@ class Refactor:
 
   def run(self):
 
-    parser = argparse.ArgumentParser(description="Intelligently refactor text files.")
+    parser = argparse.ArgumentParser(description="Intelligently find and replace tokens while keeping case constant.  See https://github.com/alexethier/refactor for more details.")
     parser.add_argument("-i", "--input_file", nargs="*", help="Path to file(s) to edit.")
     parser.add_argument("-f", "--find", nargs="*", help="Ordered list of tokens to find.", required=True)
     parser.add_argument("-r", "--replace", nargs="*", help="Ordered list of tokens to replace.", required=True)
@@ -156,6 +164,7 @@ class Refactor:
     all_changed_keys = {}
     all_changed_filepaths = {}
 
+    # Determine a list of filepaths to execute over
     input_filepaths = []
     if S_ISFIFO(os.fstat(0).st_mode):
       for line in sys.stdin:
@@ -173,9 +182,8 @@ class Refactor:
       if fullpath != None:
         filepaths.append(fullpath)
 
-    # If we rename files and directories we need to rename the bottom most files first
+    # If we rename files and directories we need to rename the files at the bottom of the directory tree first
     # So get the full paths of the files and sort by length
-    # This won't work with wonky inputs (weird relative paths or symlinks) but should work 99% of the time
     filepaths.sort(lambda x,y: cmp(len(y), len(x)))
 
     for filepath in filepaths:
