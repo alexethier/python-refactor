@@ -14,9 +14,9 @@ class Refactor:
     pass;
 
   # From the input lists of lists generate a new list containing the cross product between all input elements.
-  def combine(self, token_options):
+  def combine(self, token_options, separators=[" ", "_", "-", "."]):
 
-    # If there are more than two token lists the input, use recursion to combine all the lists together except the first one.
+    # If there are more than two token lists, use recursion to combine all the lists together except the first one.
     if(len(token_options) > 2):
       current_options = token_options[1:]
       combinations = self.combine(current_options)
@@ -33,16 +33,14 @@ class Refactor:
         for second_token in token_options[1]:
           combinations.append(first_token + second_token)
           if second_token != "":
-            combinations.append(first_token + " " + second_token)
-            combinations.append(first_token + "_" + second_token)
-            combinations.append(first_token + "-" + second_token)
+            for separator in separators:
+              combinations.append(first_token + separator + second_token)
             # Add other common token separators here.
           else:
             # If dummy variables are used then combining the tokens should not include a separator.
             # In order to keep the indexes in sync we need to add one dummy combination for each real combination.
-            combinations.append(first_token + second_token)
-            combinations.append(first_token + second_token)
-            combinations.append(first_token + second_token)
+            for separator in separators:
+              combinations.append(first_token + second_token)
 
       return combinations
 
@@ -108,21 +106,46 @@ class Refactor:
       with open(filepath, "w") as output_file:
         output_file.write(content)
 
+#  def renameFile(self, filepath, replace_map, plan=False):
+#
+#    refactor_filepath = filepath
+#    for key in replace_map:
+#      refactor_filepath = refactor_filepath[::-1].replace(key[::-1], replace_map[key][::-1],1)[::-1]
+#      #refactor_filepath = refactor_filepath.replace(key, replace_map[key],1)
+#      if refactor_filepath != filepath:
+#        break
+#
+#    if refactor_filepath != filepath:
+#      print(filepath + " -> " + refactor_filepath)
+#      return refactor_filepath  
+    
+# Changing directories like so: one/two/three -> 1/2/3 is intrinsically different than names like
+# /a/one-two-three/b -> a/1-2-3/b because the first case changes a whole span of directories
+# Consider this mapping change: -f one two three -r 1 2
+# We need the (option to) preserve the directory structure, so the following change will be scheduled: one/two/three -> 1/2/three
+# This means chopping the find list so that it is equal in length to the replace list.
+
+# Plan: Change paths in two steps:
+# First check the entire span of the path and make a replacement, use a special replace map for this.  Record the mapping.
+# Second change individual elements (split on '/').
+# Record the mapping of input to output for all changes
+# Then finally make necessary adjustments using the directory sorted order (root level directories first).
+
   def renameFile(self, filepath, replace_map, plan=False):
 
     # Given a path only rename the basename
-      dirname = os.path.dirname(filepath)
-      basename = os.path.basename(filepath)
-  
-      for key in replace_map:
-        basename = basename.replace(key, replace_map[key])
+    dirname = os.path.dirname(filepath)
+    basename = os.path.basename(filepath)
+    
+    for key in replace_map:
+      basename = basename.replace(key, replace_map[key])
 
-      newpath = os.path.join(dirname, basename)
-      if newpath != filepath:
-        if(plan):
-          return newpath
-        else:
-          os.rename(filepath, newpath)
+    newpath = os.path.join(dirname, basename)
+    if newpath != filepath:
+      if(plan):
+        return newpath
+      else:
+        os.rename(filepath, newpath)
 
   def check_path(self, filepath):
     fullpath = os.path.abspath(filepath.rstrip('\n'))
@@ -184,7 +207,7 @@ class Refactor:
 
     # If we rename files and directories we need to rename the files at the bottom of the directory tree first
     # So get the full paths of the files and sort by length
-    filepaths.sort(lambda x,y: cmp(len(y), len(x)))
+    filepaths.sort(lambda x,y: cmp(len(x), len(y)))
 
     for filepath in filepaths:
       if os.path.isfile(filepath):
