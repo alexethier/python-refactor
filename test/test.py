@@ -6,7 +6,7 @@ def test_rename_files():
 
   args = {}
   args['find'] = ['a','b']
-  args['replace'] = ['c','d']
+  args['replace'] = ['c']
   args['plan'] = True
   args['rename'] = True
 
