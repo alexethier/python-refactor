@@ -177,6 +177,24 @@ class Refactor:
 
     self.run(args, input_filepaths)
 
+  # TODO: Change this to a breadth first search
+  def rename_tree(self, filetree, plan, parent_path="/"):
+    plan_output = []
+
+    for key in filetree:
+      if key == '/':
+        src = parent_path + "/" + filetree['/']['src']
+        dest = parent_path + "/" + filetree['/']['dest']
+        if(not plan):
+          os.rename(parent_path + "/" + filetree['/']['src'], parent_path + "/" + filetree['/']['dest'])
+        else:
+          plan_output.append(src + " -> " + dest)
+          print("CHANGE NAME: " + src + " -> " + dest)
+      else:
+        new_plan_output = self.rename_tree(filetree[key], plan, parent_path + "/" + key)
+        plan_output.extend(new_plan_output)
+    return plan_output
+
   def run(self, args, input_filepaths):
 
     tokens = self.get_tokens(args['find'], args['replace'])
@@ -226,18 +244,37 @@ class Refactor:
           self.refactorFile(filepath, replace_map)
       if args['rename']:
         # As a hack assume no files have '/' as a char in the name.
-        for key in replace_map:
-          new_filepath = filepath.replace(key, replace_map[key])
-          filenames = new_filepath.split("/")
-          filepointer = filetrees
-          for filename in filenames:
-            filepointer[filename] = {}
-            filepointer = filepointer[filename]
-          filepointer['/'] = {}
-          filepointer['/']['src'] = os.path.basename(filepath)
-          filepointer['/']['dest'] = filenames[-1]
 
-        pp.pprint(filetrees)
+        new_filepath = filepath
+        for key in replace_map:
+          new_filepath = new_filepath.replace(key, replace_map[key])
+
+        # TODO: MAJOR ERROR!!! Splitting on '/' means we will not catch cases of a/b -> c/d properly!
+        filenames = new_filepath.split("/")
+        filepointer = filetrees
+        for filename in filenames:
+          if(filename not in filepointer):
+            filepointer[filename] = {}
+          filepointer = filepointer[filename]
+
+        src = os.path.basename(filepath)
+        dest = filenames[-1]
+        if src != dest:
+          filepointer['/'] = {}
+          filepointer['/']['src'] = src
+          filepointer['/']['dest'] = dest
+
+        # Will need to wrap in a recursive function
+        #for key in filetrees:
+        #  if key == '/':
+            
+    pp.pprint(filetrees)
+    print("")
+    print("")
+    print("DONE FILETREES")
+    print("")
+    changed_names = self.rename_tree(filetrees, args['plan'])
+    pp.pprint(changed_names)
           
         #if args.plan:
         #  new_filepath = self.renameFile(filepath, replace_map, True)
