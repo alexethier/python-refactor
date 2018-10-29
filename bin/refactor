@@ -3,14 +3,14 @@
 
 import argparse
 import sys
-import pprint
-pp = pprint.PrettyPrinter(indent=2)
+#import pprint
+#pp = pprint.PrettyPrinter(indent=2)
 import os
 import os.path
 from stat import S_ISFIFO
 from string import ascii_lowercase
 
-DUMMY_TOKEN = "yyy.mmm"
+DUMMY_TOKEN = "yyy.mmm" # TODO: Compute a better dummy token
 
 class Refactor:
 
@@ -111,47 +111,6 @@ class Refactor:
       with open(filepath, "w") as output_file:
         output_file.write(content)
 
-#  def renameFile(self, filepath, replace_map, plan=False):
-#
-#    refactor_filepath = filepath
-#    for key in replace_map:
-#      refactor_filepath = refactor_filepath[::-1].replace(key[::-1], replace_map[key][::-1],1)[::-1]
-#      #refactor_filepath = refactor_filepath.replace(key, replace_map[key],1)
-#      if refactor_filepath != filepath:
-#        break
-#
-#    if refactor_filepath != filepath:
-#      print(filepath + " -> " + refactor_filepath)
-#      return refactor_filepath  
-    
-# Changing directories like so: one/two/three -> 1/2/3 is intrinsically different than names like
-# /a/one-two-three/b -> a/1-2-3/b because the first case changes a whole span of directories
-# Consider this mapping change: -f one two three -r 1 2
-# We need (the option) to preserve the directory structure, so the following change will be scheduled: one/two/three -> 1/2/three
-# This means chopping the find list so that it is equal in length to the replace list.
-
-# Plan: Change paths in two steps:
-# First check the entire span of the path and make a replacement, use a special replace map for this.  Record the mapping.
-# Second change individual elements (split on '/').
-# Record the mapping of input to output for all changes
-# Then finally make necessary adjustments using the directory sorted order (root level directories first).
-
-#  def old.renameFile(self, filepath, replace_map, plan=False):
-#
-#    # Given a path only rename the basename
-#    dirname = os.path.dirname(filepath)
-#    basename = os.path.basename(filepath)
-#    
-#    for key in replace_map:
-#      basename = basename.replace(key, replace_map[key])
-#
-#    newpath = os.path.join(dirname, basename)
-#    if newpath != filepath:
-#      if(plan):
-#        return newpath
-#      else:
-#        os.rename(filepath, newpath)
-
   def check_path(self, filepath):
     fullpath = os.path.abspath(filepath.rstrip('\n'))
     if os.path.exists(fullpath) and filepath != ".":
@@ -167,6 +126,16 @@ class Refactor:
     parser.add_argument("-n", "--rename", action='store_true', default=False, help="Renames files and directories using the same replacement strategy.")
 
     args = parser.parse_args()
+
+    # Convert args to a normal map
+    # Consider an implementation that converts it to json and back
+    fixed_args = {}
+    fixed_args['input_file'] = args.input_file
+    fixed_args['find'] = args.find
+    fixed_args['replace'] = args.replace
+    fixed_args['plan'] = args.plan
+    fixed_args['rename'] = args.rename
+    args = fixed_args
 
     # If there are more replace tokens than find tokens the code will run but we have to guess the separator and pattern to use.
     # Since this is unlikely to choose correctly it is better to just return an error.
@@ -210,7 +179,7 @@ class Refactor:
             # Ensure the destination directory exists.
             dest_dirname = os.path.dirname(dest_path)
             if(not os.path.isdir(dest_dirname)):
-              os.path.makedirs(dest_dirname)
+              os.makedirs(dest_dirname)
             
             if(filetree[key]['dest'] != DUMMY_TOKEN):
               if(os.path.exists(dest_path)):
@@ -221,10 +190,12 @@ class Refactor:
               # We need to copy all children
               children = os.listdir(src_path)
               for child in children:
-                if(os.path.exists(dest_path)):
-                  print("[WARNING] Path already exists: " + dest_path + ", not renaming") 
+                child_src_path = src_path + "/" + child
+                child_dest_path = dest_path + "/" + child
+                if(os.path.exists(child_dest_path)):
+                  print("[WARNING] Path already exists: " + child_dest_path + ", not renaming") 
                 else:
-                  os.rename(src_path + "/" + child, dest_path + "/" + child)
+                  os.rename(child_src_path, child_dest_path)
 
               children = os.listdir(src_path)
               if(len(children) == 0):
@@ -260,19 +231,6 @@ class Refactor:
 
     return replace_map
 
-#  # Will work 99.9% of the time, for the others i'm so sorry.
-#  def get_unique_token(self, tokens):
-#
-#    exclusions = []
-#    for(token in tokens):
-#      exclusions.append(token[0])
-#
-#    for char in ascii_lowercase:
-#      if(char not in exclusions):
-#        return "/" + char # Use '/' as the only safe delimiter character 
-#
-#    raise Error("Could not compute a unique token given token inputs.")
-
   def run(self, args, input_filepaths):
 
     # Datastructures to store planned changes
@@ -293,10 +251,6 @@ class Refactor:
       if fullpath != None:
         filepaths.append(fullpath)
 
-    ## If we rename files and directories we need to rename the files at the bottom of the directory tree first
-    ## So get the full paths of the files and sort by length
-    #filepaths.sort(lambda x,y: cmp(len(x), len(y)))
-
     # Perform file content replacements
     replace_map = self.compute_replace_map(args['find'], args['replace'], "")
     for filepath in filepaths:
@@ -306,10 +260,6 @@ class Refactor:
           all_changed_keys.update(changed_keys)
         else:
           self.refactorFile(filepath, replace_map)
-
-    # Perform file name replacements, use a non empty dummy variable
-    #dummy_token = self.get_unique_token(args['find'] + args['replace'])
-    #dummy_token = "/"
 
     replace_map = self.compute_replace_map(args['find'], args['replace'], DUMMY_TOKEN)
     filetree = {} # Keep a list of tree nodes to track file name changes
@@ -340,26 +290,6 @@ class Refactor:
 
       changed_names = self.rename_tree([ filetree ], args['plan'])
 
-    #pp.pprint(filetree)
-    #import json
-    #print(json.dumps(filetree))
-    #print("")
-    #print("")
-    #print("DONE FILETREES")
-    #print("")
-    #print("")
-    #print("List of Name Changes:")
-    #pp.pprint(changed_names)
-    #print("")
-    #print("Final Plan Output:")
-          
-        #if args.plan:
-        #  new_filepath = self.renameFile(filepath, replace_map, True)
-        #  if new_filepath != None:
-        #    all_changed_filepaths[filepath] = new_filepath
-        #else:
-        #  self.renameFile(filepath, replace_map)
-
     if args['plan']:
       print("Planned replacements:")
       for key in all_changed_keys:
@@ -367,7 +297,7 @@ class Refactor:
 
       if args['rename']:
         print("")
-        print("Planned Renaming:")
+        print("Planned renaming:")
         for key in changed_names:
           print(key)
 
