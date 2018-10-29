@@ -181,6 +181,12 @@ class Refactor:
 
     self.run(args, input_filepaths)
 
+  def remove_dummy_tokens(self, path):
+    while(path.find(DUMMY_TOKEN) != -1):
+      index = path.find(DUMMY_TOKEN)
+      path = path[:index-1] + path[index + len(DUMMY_TOKEN):]
+    return path
+
   def rename_tree(self, queue, plan):
 
     plan_output = []
@@ -195,20 +201,39 @@ class Refactor:
           src_path = filetree[key]['dirpath'] + "/" + filetree[key]['src']
           dest_path = filetree[key]['dirpath'] + "/" + filetree[key]['dest']
 
+          # Remove dummy tokens
+          src_path = self.remove_dummy_tokens(src_path)
+          dest_path = self.remove_dummy_tokens(dest_path)
+
           if(not plan):
-            pass # TODO
-            #os.rename(src_path, dest_path)
-          else:
-            if(os.path.basename(dest_path) == DUMMY_TOKEN):
-              src_path = src_path + "/*"
-              dest_path = dest_path[:len(dest_path) - len(DUMMY_TOKEN)]
+
+            # Ensure the destination directory exists.
+            dest_dirname = os.path.dirname(dest_path)
+            if(not os.path.isdir(dest_dirname)):
+              os.path.makedirs(dest_dirname)
             
-            while(src_path.find(DUMMY_TOKEN) != -1):
-              index = src_path.find(DUMMY_TOKEN)
-              src_path = src_path[:index-1] + src_path[index + len(DUMMY_TOKEN):]
-            while(dest_path.find(DUMMY_TOKEN) != -1):
-              index = dest_path.find(DUMMY_TOKEN)
-              dest_path = dest_path[:index-1] + dest_path[index + len(DUMMY_TOKEN):]
+            if(filetree[key]['dest'] != DUMMY_TOKEN):
+              if(os.path.exists(dest_path)):
+                print("[WARNING] Path already exists: " + dest_path + ", not renaming") 
+              else:
+                os.rename(src_path, dest_path)
+            else:
+              # We need to copy all children
+              children = os.listdir(src_path)
+              for child in children:
+                if(os.path.exists(dest_path)):
+                  print("[WARNING] Path already exists: " + dest_path + ", not renaming") 
+                else:
+                  os.rename(src_path + "/" + child, dest_path + "/" + child)
+
+              children = os.listdir(src_path)
+              if(len(children) == 0):
+                os.rmdir(src_path)
+          else:
+            if(filetree[key]['dest'] == DUMMY_TOKEN):
+              src_path += "/*"
+              dest_path += "/"
+
             plan_output.append(src_path + " -> " + dest_path)
         else:
           queue.append(filetree[key])
@@ -252,7 +277,7 @@ class Refactor:
 
     # Datastructures to store planned changes
     all_changed_keys = {}
-    all_changed_filepaths = {}
+    #all_changed_filepaths = {}
 
     # Determine a list of filepaths to execute over
     if args['input_file'] != None:
@@ -313,19 +338,20 @@ class Refactor:
             filepointer[old_filename]['/']['dirpath'] = "/".join(new_filenames[:index])
           filepointer = filepointer[old_filename]
 
-    pp.pprint(filetree)
-    import json
-    print(json.dumps(filetree))
-    print("")
-    print("")
-    print("DONE FILETREES")
-    print("")
-    changed_names = self.rename_tree([ filetree ], args['plan'])
-    print("")
-    print("List of Name Changes:")
-    pp.pprint(changed_names)
-    print("")
-    print("Final Plan Output:")
+      changed_names = self.rename_tree([ filetree ], args['plan'])
+
+    #pp.pprint(filetree)
+    #import json
+    #print(json.dumps(filetree))
+    #print("")
+    #print("")
+    #print("DONE FILETREES")
+    #print("")
+    #print("")
+    #print("List of Name Changes:")
+    #pp.pprint(changed_names)
+    #print("")
+    #print("Final Plan Output:")
           
         #if args.plan:
         #  new_filepath = self.renameFile(filepath, replace_map, True)
@@ -335,11 +361,15 @@ class Refactor:
         #  self.renameFile(filepath, replace_map)
 
     if args['plan']:
+      print("Planned replacements:")
       for key in all_changed_keys:
         print(key + " -> " + all_changed_keys[key])
 
-      for key in all_changed_filepaths:
-        print(key + " -> " + all_changed_filepaths[key])
+      if args['rename']:
+        print("")
+        print("Planned Renaming:")
+        for key in changed_names:
+          print(key)
 
 if __name__ == "__main__":
   refactor = Refactor();

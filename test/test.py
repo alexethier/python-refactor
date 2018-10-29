@@ -18,7 +18,8 @@ def test_rename_files():
                        'resources/a/b/c',
                        'resources/a/b/c/a.b',
                        'resources/a/b/c/a.b/z.a.b.z',
-                       'resources/a/b/a-b'
+                       'resources/a/b/e',
+                       'resources/a/b/e/a-b'
                      ]
 
   refactor = Refactor()
