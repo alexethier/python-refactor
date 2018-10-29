@@ -8,6 +8,9 @@ pp = pprint.PrettyPrinter(indent=2)
 import os
 import os.path
 from stat import S_ISFIFO
+from string import ascii_lowercase
+
+DUMMY_TOKEN = "yyy.mmm"
 
 class Refactor:
 
@@ -178,35 +181,14 @@ class Refactor:
 
     self.run(args, input_filepaths)
 
-#  # TODO: Change this to a breadth first search
-#  def badrename_tree(self, filetree, plan, parent_path="/"):
-#    #print("Renaming Tree")
-#    plan_output = []
-#
-#    for key in filetree:
-#      if key == '/':
-#        src = parent_path + "/" + filetree['/']['src']
-#        dest = parent_path + "/" + filetree['/']['dest']
-#        if(not plan):
-#          os.rename(parent_path + "/" + filetree['/']['src'], parent_path + "/" + filetree['/']['dest'])
-#        else:
-#          plan_output.append(src + " -> " + dest)
-#          print("bad CHANGE NAME: " + src + " -> " + dest)
-#      else:
-#        new_plan_output = self.rename_tree(filetree[key], plan, parent_path + "/" + key)
-#        plan_output.extend(new_plan_output)
-#    return plan_output
-
   def rename_tree(self, queue, plan):
 
     plan_output = []
     if(len(queue) > 0):
-      filetree= queue[0]['filetree']
+      filetree= queue[0]
       queue = queue[1:]
 
       for key in filetree:
-
-        print(key)
 
         if key == '/':
 
@@ -214,43 +196,29 @@ class Refactor:
           dest_path = filetree[key]['dirpath'] + "/" + filetree[key]['dest']
 
           if(not plan):
-            os.rename(src_path, dest_path)
+            pass # TODO
+            #os.rename(src_path, dest_path)
           else:
+            if(os.path.basename(dest_path) == DUMMY_TOKEN):
+              src_path = src_path + "/*"
+              dest_path = dest_path[:len(dest_path) - len(DUMMY_TOKEN)]
+            
+            while(src_path.find(DUMMY_TOKEN) != -1):
+              index = src_path.find(DUMMY_TOKEN)
+              src_path = src_path[:index-1] + src_path[index + len(DUMMY_TOKEN):]
+            while(dest_path.find(DUMMY_TOKEN) != -1):
+              index = dest_path.find(DUMMY_TOKEN)
+              dest_path = dest_path[:index-1] + dest_path[index + len(DUMMY_TOKEN):]
             plan_output.append(src_path + " -> " + dest_path)
-            print("CHANGE NAME 3: " + src_path + " -> " + dest_path)
         else:
-          treenode = {}
-          treenode['filetree'] = filetree[key]
-          queue.append(treenode)
+          queue.append(filetree[key])
 
       new_plan_output = self.rename_tree(queue, plan)
-      #new_plan_output = self.rename_tree(queue, plan, parent_path + "/" + key)
       plan_output.extend(new_plan_output)
 
     return plan_output
 
-#  def bad2rename_tree(self, filetree, plan, parent_path="/"):
-#    stack = filetree
-#    plan_output = []
-#
-#    while(len(stack) > 0):
-#
-#      
-#
-#      if key == '/':
-#        src = parent_path + "/" + filetree['/']['src']
-#        dest = parent_path + "/" + filetree['/']['dest']
-#        if(not plan):
-#          os.rename(parent_path + "/" + filetree['/']['src'], parent_path + "/" + filetree['/']['dest'])
-#        else:
-#          plan_output.append(src + " -> " + dest)
-#          print("CHANGE NAME: " + src + " -> " + dest)
-#      else:
-#        new_plan_output = self.rename_tree(filetree[key], plan, parent_path + "/" + key)
-#        plan_output.extend(new_plan_output)
-#    return plan_output
-
-
+  # Tell me when this becomes sluggish and then, and only then, will I change it to return a generator instead of a list.
   def compute_replace_map(self, find_tokens, replace_tokens, pad_char):
     tokens = self.get_tokens(find_tokens, replace_tokens, pad_char)
     padded_find_tokens = tokens['find_tokens']
@@ -266,6 +234,19 @@ class Refactor:
       replace_map[find_combination] = replace_combination    
 
     return replace_map
+
+#  # Will work 99.9% of the time, for the others i'm so sorry.
+#  def get_unique_token(self, tokens):
+#
+#    exclusions = []
+#    for(token in tokens):
+#      exclusions.append(token[0])
+#
+#    for char in ascii_lowercase:
+#      if(char not in exclusions):
+#        return "/" + char # Use '/' as the only safe delimiter character 
+#
+#    raise Error("Could not compute a unique token given token inputs.")
 
   def run(self, args, input_filepaths):
 
@@ -302,8 +283,11 @@ class Refactor:
           self.refactorFile(filepath, replace_map)
 
     # Perform file name replacements, use a non empty dummy variable
-    replace_map = self.compute_replace_map(args['find'], args['replace'], "yyy.mmm")
-    filetrees = {} # Keep a list of tree nodes to track file name changes
+    #dummy_token = self.get_unique_token(args['find'] + args['replace'])
+    #dummy_token = "/"
+
+    replace_map = self.compute_replace_map(args['find'], args['replace'], DUMMY_TOKEN)
+    filetree = {} # Keep a list of tree nodes to track file name changes
     if args['rename']:
       for filepath in filepaths:
         # As a hack assume no files have '/' as a char in the name.
@@ -311,12 +295,10 @@ class Refactor:
         new_filepath = filepath
         for key in replace_map:
           new_filepath = new_filepath.replace(key, replace_map[key])
-        #if(new_filepath != filepath):
-        #  print("FILEPATH CHANGED: " + filepath + " -> " + new_filepath)
 
         old_filenames = filepath.split("/")
         new_filenames = new_filepath.split("/")
-        filepointer = filetrees
+        filepointer = filetree
         for index in range(0,len(new_filenames)):
           new_filename = new_filenames[index]
           old_filename = old_filenames[index]
@@ -331,17 +313,14 @@ class Refactor:
             filepointer[old_filename]['/']['dirpath'] = "/".join(new_filenames[:index])
           filepointer = filepointer[old_filename]
 
-    pp.pprint(filetrees)
+    pp.pprint(filetree)
     import json
-    print(json.dumps(filetrees))
+    print(json.dumps(filetree))
     print("")
     print("")
     print("DONE FILETREES")
     print("")
-    treenode = {}
-    treenode['filetree'] = filetrees
-    treenode['parentpath'] = "/"
-    changed_names = self.rename_tree([ treenode ], args['plan'])
+    changed_names = self.rename_tree([ filetree ], args['plan'])
     print("")
     print("List of Name Changes:")
     pp.pprint(changed_names)
