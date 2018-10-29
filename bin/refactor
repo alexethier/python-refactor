@@ -3,10 +3,14 @@
 
 import argparse
 import sys
-import pprint
+#import pprint
+#pp = pprint.PrettyPrinter(indent=2)
 import os
 import os.path
 from stat import S_ISFIFO
+from string import ascii_lowercase
+
+DUMMY_TOKEN = "yyy.mmm" # TODO: Compute a better dummy token
 
 class Refactor:
 
@@ -14,9 +18,9 @@ class Refactor:
     pass;
 
   # From the input lists of lists generate a new list containing the cross product between all input elements.
-  def combine(self, token_options):
+  def combine(self, token_options, separators=[" ", "_", "-", ".", "/"]):
 
-    # If there are more than two token lists the input, use recursion to combine all the lists together except the first one.
+    # If there are more than two token lists, use recursion to combine all the lists together except the first one.
     if(len(token_options) > 2):
       current_options = token_options[1:]
       combinations = self.combine(current_options)
@@ -33,16 +37,14 @@ class Refactor:
         for second_token in token_options[1]:
           combinations.append(first_token + second_token)
           if second_token != "":
-            combinations.append(first_token + " " + second_token)
-            combinations.append(first_token + "_" + second_token)
-            combinations.append(first_token + "-" + second_token)
+            for separator in separators:
+              combinations.append(first_token + separator + second_token)
             # Add other common token separators here.
           else:
             # If dummy variables are used then combining the tokens should not include a separator.
             # In order to keep the indexes in sync we need to add one dummy combination for each real combination.
-            combinations.append(first_token + second_token)
-            combinations.append(first_token + second_token)
-            combinations.append(first_token + second_token)
+            for separator in separators:
+              combinations.append(first_token + second_token)
 
       return combinations
 
@@ -64,24 +66,25 @@ class Refactor:
 
     return self.combine(all_combinations)
 
-  def pad_tokens(self, token_list, length):
+  def pad_tokens(self, token_list, length, pad_char):
+    output_list = token_list[:]
     while length > 0:
-      token_list.append("")
+      output_list.append(pad_char)
       length = length - 1
-    return token_list
+    return output_list
 
   # Pads the two lists so they are the same length, the shorter list will get dummy tokens.
   # This is necessary to keep the indexes between find and replace tokens synchronized.
-  def get_tokens(self, find_tokens, replace_tokens):
+  def get_tokens(self, find_tokens, replace_tokens, pad_char):
 
     token_object = {}
 
     difference = len(find_tokens) - len(replace_tokens)
     if difference > 0:
       token_object['find_tokens'] = find_tokens
-      token_object['replace_tokens'] = self.pad_tokens(replace_tokens, difference)
+      token_object['replace_tokens'] = self.pad_tokens(replace_tokens, difference, pad_char)
     elif difference < 0:
-      token_object['find_tokens'] = self.pad_tokens(find_tokens, -1 * difference)
+      token_object['find_tokens'] = self.pad_tokens(find_tokens, -1 * difference, pad_char)
       token_object['replace_tokens'] = replace_tokens
     else:
       token_object['find_tokens'] = find_tokens
@@ -108,28 +111,12 @@ class Refactor:
       with open(filepath, "w") as output_file:
         output_file.write(content)
 
-  def renameFile(self, filepath, replace_map, plan=False):
-
-    # Given a path only rename the basename
-      dirname = os.path.dirname(filepath)
-      basename = os.path.basename(filepath)
-  
-      for key in replace_map:
-        basename = basename.replace(key, replace_map[key])
-
-      newpath = os.path.join(dirname, basename)
-      if newpath != filepath:
-        if(plan):
-          return newpath
-        else:
-          os.rename(filepath, newpath)
-
   def check_path(self, filepath):
     fullpath = os.path.abspath(filepath.rstrip('\n'))
     if os.path.exists(fullpath) and filepath != ".":
       return fullpath
 
-  def run(self):
+  def boot(self):
 
     parser = argparse.ArgumentParser(description="Intelligently find and replace tokens while keeping case constant.  See https://github.com/alexethier/refactor for more details.")
     parser.add_argument("-i", "--input_file", nargs="*", help="Path to file(s) to edit.")
@@ -140,37 +127,119 @@ class Refactor:
 
     args = parser.parse_args()
 
+    # Convert args to a normal map
+    # Consider an implementation that converts it to json and back
+    fixed_args = {}
+    fixed_args['input_file'] = args.input_file
+    fixed_args['find'] = args.find
+    fixed_args['replace'] = args.replace
+    fixed_args['plan'] = args.plan
+    fixed_args['rename'] = args.rename
+    args = fixed_args
+
     # If there are more replace tokens than find tokens the code will run but we have to guess the separator and pattern to use.
     # Since this is unlikely to choose correctly it is better to just return an error.
-    if(len(args.replace) > len(args.find)):
+    if(len(args['replace']) > len(args['find'])):
       sys.stderr.write("The number of replace tokens must not exceed the number of find tokens.  Try concatenating the replace tokens.\n")
       sys.exit(1)
 
-    tokens = self.get_tokens(args.find, args.replace)
-    find_tokens = tokens['find_tokens']
-    replace_tokens = tokens['replace_tokens']
+    input_filepaths=[]
+    if S_ISFIFO(os.fstat(0).st_mode):
+      for line in sys.stdin:
+        input_filepaths.append(line)
 
-    # Because combinations are computed deterministically both lists will share the same ordering and can easily be mapped together.
-    find_combinations = self.computeCombinations(find_tokens)
-    replace_combinations = self.computeCombinations(replace_tokens)
+    self.run(args, input_filepaths)
+
+  def remove_dummy_tokens(self, path):
+    while(path.find(DUMMY_TOKEN) != -1):
+      index = path.find(DUMMY_TOKEN)
+      path = path[:index-1] + path[index + len(DUMMY_TOKEN):]
+    return path
+
+  def rename_tree(self, queue, plan):
+
+    plan_output = []
+    if(len(queue) > 0):
+      filetree= queue[0]
+      queue = queue[1:]
+
+      for key in filetree:
+
+        if key == '/':
+
+          src_path = filetree[key]['dirpath'] + "/" + filetree[key]['src']
+          dest_path = filetree[key]['dirpath'] + "/" + filetree[key]['dest']
+
+          # Remove dummy tokens
+          src_path = self.remove_dummy_tokens(src_path)
+          dest_path = self.remove_dummy_tokens(dest_path)
+
+          if(not plan):
+
+            # Ensure the destination directory exists.
+            dest_dirname = os.path.dirname(dest_path)
+            if(not os.path.isdir(dest_dirname)):
+              os.makedirs(dest_dirname)
+            
+            if(filetree[key]['dest'] != DUMMY_TOKEN):
+              if(os.path.exists(dest_path)):
+                print("[WARNING] Path already exists: " + dest_path + ", not renaming") 
+              else:
+                os.rename(src_path, dest_path)
+            else:
+              # We need to copy all children
+              children = os.listdir(src_path)
+              for child in children:
+                child_src_path = src_path + "/" + child
+                child_dest_path = dest_path + "/" + child
+                if(os.path.exists(child_dest_path)):
+                  print("[WARNING] Path already exists: " + child_dest_path + ", not renaming") 
+                else:
+                  os.rename(child_src_path, child_dest_path)
+
+              children = os.listdir(src_path)
+              if(len(children) == 0):
+                os.rmdir(src_path)
+          else:
+            if(filetree[key]['dest'] == DUMMY_TOKEN):
+              src_path += "/*"
+              dest_path += "/"
+
+            plan_output.append(src_path + " -> " + dest_path)
+        else:
+          queue.append(filetree[key])
+
+      new_plan_output = self.rename_tree(queue, plan)
+      plan_output.extend(new_plan_output)
+
+    return plan_output
+
+  # Tell me when this becomes sluggish and then, and only then, will I change it to return a generator instead of a list.
+  def compute_replace_map(self, find_tokens, replace_tokens, pad_char):
+    tokens = self.get_tokens(find_tokens, replace_tokens, pad_char)
+    padded_find_tokens = tokens['find_tokens']
+    padded_replace_tokens = tokens['replace_tokens']
+
+    find_combinations = self.computeCombinations(padded_find_tokens)
+    replace_combinations = self.computeCombinations(padded_replace_tokens)
 
     replace_map = {}
     for index in range(len(find_combinations)):
       find_combination = find_combinations[index]
       replace_combination = replace_combinations[index]
-      replace_map[find_combination] = replace_combination
+      replace_map[find_combination] = replace_combination    
+
+    return replace_map
+
+  def run(self, args, input_filepaths):
 
     # Datastructures to store planned changes
     all_changed_keys = {}
-    all_changed_filepaths = {}
+    #all_changed_filepaths = {}
 
     # Determine a list of filepaths to execute over
-    input_filepaths = []
-    if S_ISFIFO(os.fstat(0).st_mode):
-      for line in sys.stdin:
-        input_filepaths.append(line)
-    if args.input_file != None:
-      for filepath in args.input_file:
+    if args['input_file'] != None:
+      for filepath in args['input_file']:
         if os.path.isfile(filepath):
           input_filepaths.append(filepath)
         else:
@@ -182,31 +251,56 @@ class Refactor:
       if fullpath != None:
         filepaths.append(fullpath)
 
-    # If we rename files and directories we need to rename the files at the bottom of the directory tree first
-    # So get the full paths of the files and sort by length
-    filepaths.sort(lambda x,y: cmp(len(y), len(x)))
-
+    # Perform file content replacements
+    replace_map = self.compute_replace_map(args['find'], args['replace'], "")
     for filepath in filepaths:
       if os.path.isfile(filepath):
-        if args.plan:
+        if args['plan']:
           changed_keys = self.refactorFile(filepath, replace_map, True)
           all_changed_keys.update(changed_keys)
         else:
           self.refactorFile(filepath, replace_map)
-      if args.rename:
-        if args.plan:
-          new_filepath = self.renameFile(filepath, replace_map, True)
-          if new_filepath != None:
-            all_changed_filepaths[filepath] = new_filepath
-        else:
-          self.renameFile(filepath, replace_map)
 
-    if args.plan:
+    replace_map = self.compute_replace_map(args['find'], args['replace'], DUMMY_TOKEN)
+    filetree = {} # Keep a list of tree nodes to track file name changes
+    if args['rename']:
+      for filepath in filepaths:
+        # As a hack assume no files have '/' as a char in the name.
+
+        new_filepath = filepath
+        for key in replace_map:
+          new_filepath = new_filepath.replace(key, replace_map[key])
+
+        old_filenames = filepath.split("/")
+        new_filenames = new_filepath.split("/")
+        filepointer = filetree
+        for index in range(0,len(new_filenames)):
+          new_filename = new_filenames[index]
+          old_filename = old_filenames[index]
+
+          if(old_filename not in filepointer):
+            filepointer[old_filename] = {}
+
+          if(new_filename != old_filename):
+            filepointer[old_filename]['/'] = {}
+            filepointer[old_filename]['/']['dest'] = new_filename
+            filepointer[old_filename]['/']['src'] = old_filename
+            filepointer[old_filename]['/']['dirpath'] = "/".join(new_filenames[:index])
+          filepointer = filepointer[old_filename]
+
+      changed_names = self.rename_tree([ filetree ], args['plan'])
+
+    if args['plan']:
+      print("Planned replacements:")
       for key in all_changed_keys:
         print(key + " -> " + all_changed_keys[key])
 
-      for key in all_changed_filepaths:
-        print(key + " -> " + all_changed_filepaths[key])
+      if args['rename']:
+        print("")
+        print("Planned renaming:")
+        for key in changed_names:
+          print(key)
 
-refactor = Refactor();
-refactor.run();
+if __name__ == "__main__":
+  refactor = Refactor();
+  refactor.boot();
