@@ -127,7 +127,7 @@ class Refactor:
     parser.add_argument("-p", "--plan", action='store_true', default=False, help="The script will not modify any files.  It will show what replacements are planned.")
 
     if(system.lower() != 'windows'):
-      parser.add_argument("-n", "--rename", action='store_true', default=False, help="Renames files and directories using the same replacement strategy.")
+      parser.add_argument("-n", "--rename", action='store_true', default=False, help="Expiramental Option: Renames files and directories using the same replacement strategy.")
 
     args = parser.parse_args()
 
@@ -139,7 +139,7 @@ class Refactor:
     fixed_args['replace'] = args.replace
     fixed_args['plan'] = args.plan
 
-    if(args.rename):
+    if(hasattr(args, 'rename')):
       fixed_args['rename'] = args.rename
     else:
       fixed_args['rename'] = False
