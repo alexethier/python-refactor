@@ -26,4 +26,8 @@ sudo cp ./bin/refactor /bin
 
 # Usage
 
-refactor --help
+You can pipe in filepaths like so:
+`find . -type f | refactor -f token1 token2 token3 -r replaced1 replaced2`
+
+For advanced options see:
+`refactor --help`
