@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # Alex Ethier 2018 https://github.com/alexethier/refactor
 
 import platform
@@ -94,8 +94,12 @@ class Refactor:
 
   def refactorFile(self, filepath, replace_map, plan=False):
     content = None
-    with open(filepath, "r") as input_file:
-      content = input_file.read()
+    try:
+      with open(filepath, "r") as input_file:
+        content = input_file.read()
+    except UnicodeDecodeError:
+      print("[WARNING] could decode as utf-8: " + filepath + ", skipping refactor.")
+      return {};
 
     if(plan):
       matched_keys = {};
